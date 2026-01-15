@@ -7,7 +7,6 @@ library(stringr)
 library(scales)
 library(readr)
 library(sf)
-library(future.callr)
 
 ################################ Ouverture des données #########################
 
@@ -132,6 +131,16 @@ aura <- region_france %>%
 st_crs(aura) # Vérification du CRS qui est en 4326
 aura <- st_transform(aura, crs = 2154) # Transformation du CRS
 
+commune_france <- st_read("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg", layer = "commune")
+commune_aura <- commune_france %>% 
+  filter(code_insee_de_la_region == "84")
+commune_aura <- st_transform(commune_aura, crs = 2154)
+
+st_write(commune_aura, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
+         layer = "commune_aura", 
+         delete_dsn = FALSE, 
+         append = FALSE)
+
 #################################### Ajout des données sociales ######################
 
 dossier_complet <- read_delim(
@@ -168,13 +177,21 @@ st_write(SIM_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/
          delete_dsn = TRUE, 
          append = FALSE)
 
-plan(multissession, workers = 8)
-filtre_multiprocessing <- st_filter(SIM_2154, aura)
-resultat <- st_intersection(filtre_multiprocessing, aura)
+SIM_AURA_2154 <- st_filter(SIM_2154, aura) %>% # on sélectionne uniquement les points situés dans aura
+  mutate(id_station = row_number())
 
-st_write(SIM_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
+
+st_write(SIM_AURA_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
          layer = "SIM_AURA_2154", 
          delete_dsn = FALSE, 
          append = FALSE)
+
+# Jointure des points météorologiques aux communes de la région aura
+
+lien_commune_point <- st_join(SIM_AURA_2154, commune_aura, # on inverse le sens de sélection = on dupplique les communes sur chaque point pour analyser la dimension temporelle
+                          join = st_nearest_feature)
+
+
+
 
 #################################### Affichage des résultats définifs ###############
