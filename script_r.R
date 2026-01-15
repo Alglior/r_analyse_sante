@@ -7,6 +7,7 @@ library(stringr)
 library(scales)
 library(readr)
 library(sf)
+library(future.callr)
 
 ################################ Ouverture des données #########################
 
@@ -121,6 +122,16 @@ ggplot(deces_par_mois, aes(x = periode, y = n_deces)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+#################################### Ajout des données géométriques #############
+
+st_layers("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg") # permet de visualiser quelles couches sont présentes dans la donnée
+region_france <- st_read("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg", layer = "region")
+aura <- region_france %>% 
+  filter(code_insee=="84") # extraction de la région AURA
+
+st_crs(aura) # Vérification du CRS qui est en 4326
+aura <- st_transform(aura, crs = 2154) # Transformation du CRS
+
 #################################### Ajout des données sociales ######################
 
 dossier_complet <- read_delim(
@@ -139,8 +150,31 @@ head(data_selection)
 
 #################################### Ajout des données météorologiques ###############
 
-#################################### Ajout des données géométriques #############
+SIM <- read.csv("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/MENS_SIM2_2010-2019.csv", sep = ";", header = TRUE)
 
-st_layers(":/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADMIN-EXPRESS/1_DONNEES_LIVRAISON_2025-12-00044/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg")
+SIM_clean <- SIM %>% # Sans cette étape nous nous retrouvons en Algérie
+  mutate(
+    LAMBX_M = LAMBX * 100,
+    LAMBY_M = LAMBY * 100
+  )
+
+SIM_2154 <- st_as_sf(SIM_clean, 
+                      coords = c("LAMBX_M", "LAMBY_M"), 
+                      crs = 27572) %>%
+  st_transform(crs = 2154)
+
+st_write(SIM_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
+         layer = "SIM_2154", 
+         delete_dsn = TRUE, 
+         append = FALSE)
+
+plan(multissession, workers = 8)
+filtre_multiprocessing <- st_filter(SIM_2154, aura)
+resultat <- st_intersection(filtre_multiprocessing, aura)
+
+st_write(SIM_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
+         layer = "SIM_AURA_2154", 
+         delete_dsn = FALSE, 
+         append = FALSE)
 
 #################################### Affichage des résultats définifs ###############
