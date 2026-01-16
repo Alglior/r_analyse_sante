@@ -233,7 +233,46 @@ head(data_selection)
 
 # une autre représentation avec le nombre totale habitant par département + le nombre de mort + météo température
 
+# Agrégation de la météo moyenne par mois pour l'ensemble de la région
+meteo_mensuelle <- SIM_AURA_clean %>%
+  st_drop_geometry() %>%
+  group_by(annee, mois) %>%
+  summarise(temp_moyenne = mean(T_MENS, na.rm = TRUE), .groups = "drop")
+
+# Préparation des décès (extraction année/mois depuis la colonne 'periode')
+deces_mensuels <- deces_par_mois %>%
+  mutate(annee = year(periode), 
+         mois = month(periode))
+
+# Jointure finale
+df_final <- deces_mensuels %>%
+  inner_join(meteo_mensuelle, by = c("annee", "mois"))
+
+# Agrégation globale par mois civil (Moyenne 2010-2019)
+analyse_saisonniere <- df_final %>%
+  group_by(mois) %>%
+  summarise(
+    deces_moyens = mean(n_deces, na.rm = TRUE),
+    temp_moyenne = mean(temp_moyenne, na.rm = TRUE)
+  ) %>%
+  mutate(nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"))
 
 
+# On s'assure que les mois sont bien ordonnés
+analyse_saisonniere <- analyse_saisonniere %>%
+  mutate(nom_mois = factor(nom_mois, levels = rev(levels(nom_mois))))
 
+ggplot(analyse_saisonniere, aes(x = reorder(nom_mois, mois), y = deces_moyens, fill = temp_moyenne)) +
+  geom_col() + 
+  coord_flip() + 
+  # Correction de la fonction ici :
+  scale_fill_gradient(low = "blue", high = "red", name = "Temp. Moyenne (°C)") +
+  labs(
+    title = "Mortalité moyenne mensuelle en AURA (2010-2019)",
+    subtitle = "Relation entre température moyenne et volume de décès",
+    x = "Mois",
+    y = "Nombre moyen de décès",
+    caption = "Source: INSEE & Météo-France"
+  ) +
+  theme_minimal()
 
