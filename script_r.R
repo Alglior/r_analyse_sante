@@ -201,8 +201,8 @@ SIM_AURA_clean <- SIM_AURA_2154 %>%
     mois  = as.numeric(substr(as.character(DATE), 5, 6))
   )
 
-#Quelle est le mois le plus chaud dans l'années 2019 ou toutes les communes ont eu un pic de chaleur ?
-pic_chaleur_juin_2019 <- SIM_AURA_clean %>% filter(annee== "2019", mois == "6")
+#Quelle est le mois le plus chaud dans l'années 2015 ou toutes les communes ont eu un pic de chaleur ?
+pic_chaleur_juin_2019 <- SIM_AURA_clean %>% filter(annee== "2015", mois == "6")
 
 st_write (pic_chaleur_juin_2019, "resultat/resultat.gpkg", 
          layer = "pic_chaleur_juin_2019", 
@@ -219,12 +219,16 @@ dossier_complet <- read_delim(
   trim_ws = TRUE
 )
 
-vars_pop <- c("P21_POP0014", "P21_POP1529", "P21_POP3044", "P21_POP4559", "P21_POP6074", "P21_POP7589", "P21_POP90P")
-vars_pauvrete <- c("TP60AGE121", "TP60AGE221", "TP60AGE321","TP60AGE421", "TP60AGE521", "TP60AGE621")vars_all <- c(vars_pop, vars_pauvrete)
-vars_all <- vars_all[vars_all %in% colnames(dossier_complet)]
-data_selection <- dossier_complet[, vars_all]
+# 1. Liste des variables de population uniquement
+vars_pop <- c("P15_POP0014", "P15_POP1529", "P15_POP3044", "P15_POP4559", "P15_POP6074", "P15_POP7589", "P15_POP90P")
 
-head(data_selection)
+# 2. Vérification de la présence de ces colonnes dans votre tableau
+vars_selectionnees_insee <- vars_pop[vars_pop %in% colnames(dossier_complet)]
+
+# 3. Création du nouveau dataframe avec uniquement ces colonnes
+insee_pop_2015 <- dossier_complet[, vars_selectionnees]
+
+head(insee_pop_2015)
 
 #################################### ANALYSE des résultats définifs ###############
 
@@ -258,23 +262,31 @@ analyse_saisonniere <- df_final %>%
   mutate(nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"))
 
 
-# On s'assure que les mois sont bien ordonnés
-analyse_saisonniere <- analyse_saisonniere %>%
-  mutate(nom_mois = factor(nom_mois, levels = rev(levels(nom_mois))))
+# 1. Filtrer les données pour l'année 2019 uniquement
+df_2019 <- df_final %>%
+  filter(annee == 2015) %>%
+  mutate(nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"))
 
-ggplot(analyse_saisonniere, aes(x = reorder(nom_mois, mois), y = deces_moyens, fill = temp_moyenne)) +
+# 2. S'assurer que les mois sont dans le bon ordre chronologique
+df_2019$nom_mois <- factor(df_2019$nom_mois, levels = rev(levels(df_2019$nom_mois)))
+
+# 3. Création du graphique pour 2015
+ggplot(df_2019, aes(x = reorder(nom_mois, mois), y = n_deces, fill = temp_moyenne)) +
   geom_col() + 
   coord_flip() + 
-  # Correction de la fonction ici :
   scale_fill_gradient(low = "blue", high = "red", name = "Temp. Moyenne (°C)") +
   labs(
-    title = "Mortalité moyenne mensuelle en AURA (2010-2019)",
-    subtitle = "Relation entre température moyenne et volume de décès",
+    title = "Mortalité mensuelle en AURA - Année 2015",
+    subtitle = "Relation entre chaleur et pics de décès",
     x = "Mois",
-    y = "Nombre moyen de décès",
-    caption = "Source: INSEE & Météo-France"
+    y = "Nombre total de décès",
+    caption = "Données : INSEE & Météo-France"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(face = "italic")
+  )
 
 # comparer communes entre elle avec un indicateur ? Prendre le premier graphique et regarder si c’est la meme tendance ?
 
