@@ -276,3 +276,9 @@ ggplot(analyse_saisonniere, aes(x = reorder(nom_mois, mois), y = deces_moyens, f
   ) +
   theme_minimal()
 
+# comparer communes entre elle avec un indicateur ? Prendre le premier graphique et regarder si c’est la meme tendance ?
+
+#Le taux de mortalité Taux = (nombre de décès / la population total ) * 1 000
+
+
+
