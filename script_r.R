@@ -210,14 +210,6 @@ st_write (pic_chaleur_juin_2019, "resultat/resultat.gpkg",
          append = FALSE)
 
 
-
-# Aperçu du résultat : 
-# Pour chaque code_insee et chaque DATE, vous avez maintenant les variables météo
-
-#créé des fichier jointure st_nearest mais séparé par leurs date donc un fichier par date
-
-
-
 #################################### Ajout des données sociales ######################
 
 dossier_complet <- read_delim(
@@ -234,16 +226,9 @@ data_selection <- dossier_complet[, vars_all]
 
 head(data_selection)
 
-
-
-
-
-
 #################################### ANALYSE des résultats définifs ###############
 
-
-
-#graphique de corrélation entre les mois avec météo assez élevé 25°C + et le nombre de décès le même mois.
+#graphique de corrélation entre les mois avec météo assez élevé ?°C + et le nombre de décès le même mois.
 #regrouper les personnes en trois grandes classes max d'âge (0-10, 60+)
 
 # une autre représentation avec le nombre totale habitant par département + le nombre de mort + météo température
