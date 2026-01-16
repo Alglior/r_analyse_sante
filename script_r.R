@@ -220,7 +220,7 @@ dossier_complet <- read_delim(
 )
 
 # 1. Liste des variables de population uniquement
-vars_pop <- c("P15_POP0014", "P15_POP1529", "P15_POP3044", "P15_POP4559", "P15_POP6074", "P15_POP7589", "P15_POP90P")
+vars_pop <- c("P15_POP,P15_POP0014", "P15_POP1529", "P15_POP3044", "P15_POP4559", "P15_POP6074", "P15_POP7589", "P15_POP90P")
 
 # 2. Vérification de la présence de ces colonnes dans votre tableau
 vars_selectionnees_insee <- vars_pop[vars_pop %in% colnames(dossier_complet)]
