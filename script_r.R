@@ -1,3 +1,5 @@
+setwd("/home/arthur/Documents/nextcloud_sync/Documents/analyse spatiale et santé/Devoir/")
+
 ################################# Import des librairies ########################
 
 library(dplyr)
@@ -10,7 +12,18 @@ library(sf)
 
 ################################ Ouverture des données #########################
 
-deces <- read.csv("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/insee_deces.csv")
+deces <- read.csv("data/insee_deces.csv")
+
+################################ Création des couches de données ######################
+
+# Créer un dossier s'il n'existe pas
+if (!dir.exists("resultat")) dir.create("resultat")
+
+# Créer une table vide (par exemple avec une colonne géométrique)
+empty_sf <- st_sf(geometry = st_sfc(crs = 2154))
+
+# Écrire cette table pour initialiser le fichier
+st_write(empty_sf, "resultat/resultat.gpkg", layer = "init", delete_dsn = TRUE)
 
 ################################Prétraitement des données ######################
 
@@ -61,9 +74,6 @@ deces_par_annee %>%
 
 ### morts regroupés par année, mois et commune
 
-library(dplyr)
-library(lubridate)
-
 # V1
 deces_par_commune_mois <- deces_2010_2019 %>%
   filter(!is.na(date_deces)) %>%                          # Seulement dates valides
@@ -104,7 +114,7 @@ deces_par_mois <- deces_2010_2019 %>%
     periode = make_date(year = year(date_deces), 
                         month = month(date_deces), 
                         day = 1)
-    )%>%
+  )%>%
   group_by(periode) %>%           # Groupe par commune + période
   summarise(n_deces = n(), .groups = "drop")
 
@@ -121,30 +131,97 @@ ggplot(deces_par_mois, aes(x = periode, y = n_deces)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+
+
+
 #################################### Ajout des données géométriques #############
 
-st_layers("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg") # permet de visualiser quelles couches sont présentes dans la donnée
-region_france <- st_read("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg", layer = "region")
+st_layers("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg") # permet de visualiser quelles couches sont présentes dans la donnée
+
+region_france <- st_read("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg", 
+                         layer = "region")
 aura <- region_france %>% 
   filter(code_insee=="84") # extraction de la région AURA
 
 st_crs(aura) # Vérification du CRS qui est en 4326
 aura <- st_transform(aura, crs = 2154) # Transformation du CRS
 
-commune_france <- st_read("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/ADE_4-0_GPKG_WGS84G_FRA-ED2025-12-05.gpkg", layer = "commune")
+commune_france <- st_read("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg", layer = "commune")
 commune_aura <- commune_france %>% 
   filter(code_insee_de_la_region == "84")
 commune_aura <- st_transform(commune_aura, crs = 2154)
 
-st_write(commune_aura, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
+st_write(commune_aura, "resultat/resultat.gpkg", 
          layer = "commune_aura", 
+         delete_dsn = TRUE, 
+         append = FALSE)
+
+
+#################################### Ajout des données météorologiques ###############
+
+SIM <- read.csv("data/MENS_SIM2_2010-2019.csv", sep = ";", header = TRUE)
+
+SIM_clean <- SIM %>% # Sans cette étape nous nous retrouvons en Algérie avec une France toute petite
+  mutate(
+    LAMBX_M = LAMBX * 100,
+    LAMBY_M = LAMBY * 100
+  )
+
+SIM_2154 <- st_as_sf(SIM_clean, 
+                     coords = c("LAMBX_M", "LAMBY_M"), 
+                     crs = 27572) %>%
+  st_transform(crs = 2154)
+
+st_write(SIM_2154, "resultat/resultat.gpkg", 
+         layer = "SIM_2154", 
          delete_dsn = FALSE, 
          append = FALSE)
+
+SIM_AURA_2154 <- st_filter(SIM_2154, aura) %>% # on sélectionne uniquement les points situés dans aura
+  mutate(id_station = row_number())
+
+
+st_write(SIM_AURA_2154, "resultat/resultat.gpkg", 
+         layer = "SIM_AURA_2154", 
+         delete_dsn = FALSE, 
+         append = FALSE)
+
+#Supprimer la couche SIM_2154 du geopackage
+st_delete("resultat/resultat.gpkg", layer = "SIM_2154")
+
+# Jointure des points météorologiques aux communes de la région aura
+
+lien_commune_point <- st_join(SIM_AURA_2154, commune_aura, # on inverse le sens de sélection = on dupplique les communes sur chaque point pour analyser la dimension temporelle
+                              join = st_nearest_feature)
+
+#Séparation des mois / années dans deux autres colonnes séparé
+SIM_AURA_clean <- SIM_AURA_2154 %>%
+  mutate(
+    annee = as.numeric(substr(as.character(DATE), 1, 4)),
+    mois  = as.numeric(substr(as.character(DATE), 5, 6))
+  )
+
+#Quelle est le mois le plus chaud dans l'années 2019 ou toutes les communes ont eu un pic de chaleur ?
+pic_chaleur_juin_2019 <- SIM_AURA_clean %>% filter(annee== "2019", mois == "6")
+
+st_write (pic_chaleur_juin_2019, "resultat/resultat.gpkg", 
+         layer = "pic_chaleur_juin_2019", 
+         delete_dsn = FALSE, 
+         append = FALSE)
+
+
+
+# Aperçu du résultat : 
+# Pour chaque code_insee et chaque DATE, vous avez maintenant les variables météo
+
+#créé des fichier jointure st_nearest mais séparé par leurs date donc un fichier par date
+
+
 
 #################################### Ajout des données sociales ######################
 
 dossier_complet <- read_delim(
-  "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/dossier_complet/dossier_complet.csv",
+  "data/dossier_complet.csv",
   delim = ";",
   escape_double = FALSE,
   trim_ws = TRUE
@@ -157,41 +234,21 @@ data_selection <- dossier_complet[, vars_all]
 
 head(data_selection)
 
-#################################### Ajout des données météorologiques ###############
-
-SIM <- read.csv("D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/data/MENS_SIM2_2010-2019.csv", sep = ";", header = TRUE)
-
-SIM_clean <- SIM %>% # Sans cette étape nous nous retrouvons en Algérie
-  mutate(
-    LAMBX_M = LAMBX * 100,
-    LAMBY_M = LAMBY * 100
-  )
-
-SIM_2154 <- st_as_sf(SIM_clean, 
-                      coords = c("LAMBX_M", "LAMBY_M"), 
-                      crs = 27572) %>%
-  st_transform(crs = 2154)
-
-st_write(SIM_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
-         layer = "SIM_2154", 
-         delete_dsn = TRUE, 
-         append = FALSE)
-
-SIM_AURA_2154 <- st_filter(SIM_2154, aura) %>% # on sélectionne uniquement les points situés dans aura
-  mutate(id_station = row_number())
-
-
-st_write(SIM_AURA_2154, "D:/Cours_Universite/2D1_analyse_spatiale_sante/leny_grassot/resultat/resultat.gpkg", 
-         layer = "SIM_AURA_2154", 
-         delete_dsn = FALSE, 
-         append = FALSE)
-
-# Jointure des points météorologiques aux communes de la région aura
-
-lien_commune_point <- st_join(SIM_AURA_2154, commune_aura, # on inverse le sens de sélection = on dupplique les communes sur chaque point pour analyser la dimension temporelle
-                          join = st_nearest_feature)
 
 
 
 
-#################################### Affichage des résultats définifs ###############
+
+#################################### ANALYSE des résultats définifs ###############
+
+
+
+#graphique de corrélation entre les mois avec météo assez élevé 25°C + et le nombre de décès le même mois.
+#regrouper les personnes en trois grandes classes max d'âge (0-10, 60+)
+
+# une autre représentation avec le nombre totale habitant par département + le nombre de mort + météo température
+
+
+
+
+
