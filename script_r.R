@@ -87,6 +87,35 @@ table_chi <- xtabs(n_deces ~ tranche_temp + dept, data = df_2015)
 test_chi  <- chisq.test(table_chi)
 residus_df <- as.data.frame(test_chi$residuals)
 
+# CRÉATION DE CARTE_DATA POUR LE GRAPHIQUE 3 ---
+stat_annuelles_dept <- df_2015 %>%
+  group_by(dept) %>%
+  summarise(
+    total_deces = sum(n_deces),
+    pop_dept = first(pop_dept),
+    temp_ann = mean(temp_moy, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(taux = (total_deces / pop_dept) * 1000)
+
+geom_dept <- commune_aura %>%
+  mutate(dept = str_sub(code_insee, 1, 2)) %>%
+  group_by(dept) %>%
+  summarise() # Fusion des communes en départements
+
+carte_data <- geom_dept %>%
+  inner_join(stat_annuelles_dept, by = "dept")
+
+# Préparation des données pour les cartes mensuelles avec température
+carte_mensuelle_temp <- geom_dept %>%
+  inner_join(df_2015, by = "dept") %>%
+  mutate(
+    # On s'assure que les mois sont dans le bon ordre (janvier à décembre)
+    nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"),
+    nom_mois = fct_reorder(nom_mois, mois) 
+  )
+# ------------------------------------------------------------
+
 # 4. VISUALISATIONS ------------------------------------------------------------
 
 # --- Graphique 1 : Régional Global ---
@@ -101,7 +130,6 @@ ggplot(df_2015_reg, aes(x = nom_mois, y = n_deces, fill = temp)) +
   theme_aura()
 
 # --- Graphique 2 : Détail par Département (Faceting) ---
-
 ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
   geom_col() +
   coord_flip() +
@@ -111,7 +139,7 @@ ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
        x = "Mois", y = "Décès pour 1 000 hab.", fill = "Temp °C") +
   theme_aura()
 
-# --- Graphique 3
+# --- Graphique 3 : Carte ---
 ggplot(carte_data) +
   geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
   geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), 
@@ -131,7 +159,6 @@ ggplot(carte_data) +
   theme(
     plot.title = element_text(face = "bold", size = 14, margin = margin(b = 5)),
     plot.subtitle = element_text(size = 10, color = "grey30", lineheight = 1.2),
-    # CORRECTION ICI : face = "italic" au lieu de italic = TRUE
     plot.caption = element_text(size = 8, hjust = 0.9, face = "italic"), 
     legend.position = "right",
     legend.title = element_text(size = 9, face = "bold")
@@ -143,6 +170,43 @@ ggplot(residus_df, aes(x = dept, y = tranche_temp, fill = Freq)) +
   scale_fill_gradient2(low = "#313695", mid = "#f7f7f7", high = "#a50026", midpoint = 0) +
   labs(title = "Analyse Statistique des Résidus", x = "Département", y = "Tranche thermique", fill = "Écart") +
   theme_aura()
+
+# --- Graphique : Cartes Mensuelles (Taux + Température) ---
+plot_cartes_mensuelles_temp <- ggplot(carte_mensuelle_temp) +
+  # Fond de la carte (Taux de mortalité)
+  geom_sf(aes(fill = taux_1000), color = "white", linewidth = 0.1) +
+  # Étiquettes de température
+  geom_sf_text(
+    aes(label = paste0(round(temp_moy, 0), "°")), 
+    color = "white", 
+    size = 2.5, 
+    fontface = "bold",
+    check_overlap = TRUE
+  ) +
+  # Facettage par mois (3 lignes x 4 colonnes)
+  facet_wrap(~nom_mois, ncol = 4) +
+  # Échelle de couleur (Magma : jaune = taux élevé, noir = taux faible)
+  scale_fill_viridis_c(
+    option = "magma", 
+    direction = -1, 
+    name = "Taux de décès\n(pour 1 000 hab.)"
+  ) +
+  labs(
+    title = "Mortalité et Températures en Auvergne-Rhône-Alpes (2015)",
+    subtitle = "Le fond coloré indique le taux de mortalité ; le texte indique la température moyenne du mois",
+    caption = "Données : INSEE & Météo France (SIM2)"
+  ) +
+  theme_void() +
+  theme(
+    strip.text = element_text(face = "bold", size = 11, margin = margin(t = 10, b = 5)),
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, color = "grey30", hjust = 0.5, margin = margin(b = 15)),
+    legend.position = "bottom",
+    legend.key.width = unit(2, "cm")
+  )
+
+# Affichage du résultat
+print(plot_cartes_mensuelles_temp)
 
 # 5. EXPORT AUTOMATIQUE DES GRAPHIQUES -----------------------------------------
 
@@ -164,9 +228,20 @@ plots_list <- list(
   
   "03_carte_taux_mortalite" = ggplot(carte_data) +
     geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
-    geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), color = "white", size = 3) +
-    scale_fill_viridis_c(option = "magma", direction = -1) +
-    theme_void() + labs(title = "Carte du taux de mortalité 2015"),
+    geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), color = "white", fontface = "bold", size = 3.5) +
+    scale_fill_viridis_c(option = "magma", direction = -1, name = "Taux de mortalité\n(pour 1 000 hab.)") +
+    labs(
+      title = "Répartition géographique de la mortalité en Auvergne-Rhône-Alpes (2015)",
+      subtitle = "Taux de décès annuel pour 1 000 habitants et température moyenne",
+      caption = "Sources : Données décès INSEE & Historique météo SIM2"
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14, margin = margin(b = 5)),
+      plot.subtitle = element_text(size = 10, color = "grey30"),
+      plot.caption = element_text(size = 8, hjust = 0.9, face = "italic"),
+      legend.position = "right"
+    ),
   
   "04_analyse_statistique_chi2" = ggplot(residus_df, aes(x = dept, y = tranche_temp, fill = Freq)) +
     geom_tile(color = "white", linewidth = 0.5) +
@@ -176,7 +251,6 @@ plots_list <- list(
 )
 
 # Boucle d'exportation
-# On utilise iwalk pour parcourir le nom et l'objet graphique simultanément
 iwalk(plots_list, function(p, name) {
   file_path <- paste0(CONFIG$path_out, name, ".png")
   
@@ -191,5 +265,3 @@ iwalk(plots_list, function(p, name) {
   
   message(paste("Graphique sauvegardé :", file_path))
 })
-
-
