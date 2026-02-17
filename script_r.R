@@ -139,14 +139,14 @@ ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
        x = "Mois", y = "Décès pour 1 000 hab.", fill = "Temp °C") +
   theme_aura()
 
-# --- Graphique 3 : Carte ---
+# --- Graphique 3 : Carte (Texte tout en blanc) ---
 ggplot(carte_data) +
   geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
-  # Correction ici : couleur dynamique selon le taux
-  geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C"),
-                   color = taux > 11), # Ajustez le seuil '11' selon vos données
+  # On sort 'color' de aes() pour qu'il soit fixe
+  geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), 
+               color = "white",
                fontface = "bold", size = 3.5, show.legend = FALSE) +
-  scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) + 
+  # Supprimez la ligne scale_color_manual car elle ne sert plus
   scale_fill_viridis_c(
     option = "rocket", 
     direction = -1,
@@ -154,17 +154,26 @@ ggplot(carte_data) +
   ) +
   labs(
     title = "Répartition géographique de la mortalité en Auvergne-Rhône-Alpes (2015)",
-    subtitle = paste("La couleur indique le taux de décès annuel pour 1 000 habitants\n",
-                     "Les étiquettes affichent la température moyenne annuelle enregistrée"),
+    subtitle = "La couleur indique le taux de décès annuel pour 1 000 habitants\nLes étiquettes affichent la température moyenne annuelle enregistrée",
     caption = "Sources : Données décès INSEE & Historique météo SIM2"
   ) +
   theme_void() + 
   theme(
-    plot.title = element_text(face = "bold", size = 14, margin = margin(b = 5)),
-    plot.subtitle = element_text(size = 10, color = "grey30", lineheight = 1.2),
-    plot.caption = element_text(size = 8, hjust = 0.9, face = "italic"), 
+    # Centrage du titre et ajout de marge en haut (t = 20)
+    plot.title = element_text(
+      face = "bold", size = 16, hjust = 0.5, 
+      margin = margin(t = 20, b = 10)
+    ),
+    # Centrage du sous-titre
+    plot.subtitle = element_text(
+      size = 11, color = "grey30", hjust = 0.5, 
+      lineheight = 1.2, margin = margin(b = 15)
+    ),
+    # Ajustement de la légende et des marges globales
+    plot.caption = element_text(size = 8, hjust = 0.9, face = "italic"),
     legend.position = "right",
-    legend.title = element_text(size = 9, face = "bold")
+    legend.title = element_text(size = 9, face = "bold"),
+    plot.margin = margin(10, 10, 10, 10) # Ajoute un cadre de respiration autour du graph
   )
 
 # --- Graphique 4 : Chi-deux (Résidus) ---
@@ -178,37 +187,48 @@ ggplot(residus_df, aes(x = dept, y = tranche_temp, fill = Freq)) +
 plot_cartes_mensuelles_temp <- ggplot(carte_mensuelle_temp) +
   # Fond de la carte (Taux de mortalité)
   geom_sf(aes(fill = taux_1000), color = "white", linewidth = 0.1) +
-  # Étiquettes de température
+  
+  # Étiquettes de température avec COULEUR DYNAMIQUE
   geom_sf_text(
-    aes(label = paste0(round(temp_moy, 0), "°")), 
-    color = "white", 
+    aes(
+      label = paste0(round(temp_moy, 0), "°"),
+      # On définit la condition : si le taux est élevé (>11), le fond est clair, donc texte NOIR (FALSE)
+      # Si le taux est faible (<11), le fond est sombre, donc texte BLANC (TRUE)
+      color = taux_1000 < 11 
+    ), 
     size = 2.5, 
     fontface = "bold",
-    check_overlap = TRUE
+    check_overlap = TRUE,
+    show.legend = FALSE # On cache cette échelle de la légende
   ) +
+  
   # Facettage par mois (3 lignes x 4 colonnes)
   facet_wrap(~nom_mois, ncol = 4) +
-  # Échelle de couleur (rocket : jaune = taux élevé, noir = taux faible)
+  
+  # Échelle de couleur rocket (sombre = faible, clair = élevé)
   scale_fill_viridis_c(
     option = "rocket", 
     direction = -1, 
     name = "Taux de décès\n(pour 1 000 hab.)"
   ) +
+  
   labs(
     title = "Mortalité et Températures en Auvergne-Rhône-Alpes (2015)",
     subtitle = "Le fond coloré indique le taux de mortalité ; le texte indique la température moyenne du mois",
     caption = "Données : INSEE & Météo France (SIM2)"
   ) +
+  
   theme_void() +
   theme(
+    plot.margin = margin(20, 10, 10, 10), # Espace en haut de page
     strip.text = element_text(face = "bold", size = 11, margin = margin(t = 10, b = 5)),
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
-    plot.subtitle = element_text(size = 10, color = "grey30", hjust = 0.5, margin = margin(b = 15)),
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 10, color = "grey30", hjust = 0.5, margin = margin(b = 20)),
     legend.position = "bottom",
     legend.key.width = unit(2, "cm")
   )
 
-# Affichage du résultat
+# Afficher le graphique
 print(plot_cartes_mensuelles_temp)
 
 # 5. EXPORT AUTOMATIQUE DES GRAPHIQUES -----------------------------------------
