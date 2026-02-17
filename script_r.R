@@ -142,10 +142,13 @@ ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
 # --- Graphique 3 : Carte ---
 ggplot(carte_data) +
   geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
-  geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), 
-               color = "white", fontface = "bold", size = 3.5) +
+  # Correction ici : couleur dynamique selon le taux
+  geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C"),
+                   color = taux > 11), # Ajustez le seuil '11' selon vos données
+               fontface = "bold", size = 3.5, show.legend = FALSE) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) + 
   scale_fill_viridis_c(
-    option = "magma", 
+    option = "rocket", 
     direction = -1,
     name = "Taux de mortalité\n(pour 1 000 hab.)"
   ) +
@@ -185,9 +188,9 @@ plot_cartes_mensuelles_temp <- ggplot(carte_mensuelle_temp) +
   ) +
   # Facettage par mois (3 lignes x 4 colonnes)
   facet_wrap(~nom_mois, ncol = 4) +
-  # Échelle de couleur (Magma : jaune = taux élevé, noir = taux faible)
+  # Échelle de couleur (rocket : jaune = taux élevé, noir = taux faible)
   scale_fill_viridis_c(
-    option = "magma", 
+    option = "rocket", 
     direction = -1, 
     name = "Taux de décès\n(pour 1 000 hab.)"
   ) +
@@ -229,7 +232,7 @@ plots_list <- list(
   "03_carte_taux_mortalite" = ggplot(carte_data) +
     geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
     geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), color = "white", fontface = "bold", size = 3.5) +
-    scale_fill_viridis_c(option = "magma", direction = -1, name = "Taux de mortalité\n(pour 1 000 hab.)") +
+    scale_fill_viridis_c(option = "rocket", direction = -1, name = "Taux de mortalité\n(pour 1 000 hab.)") +
     labs(
       title = "Répartition géographique de la mortalité en Auvergne-Rhône-Alpes (2015)",
       subtitle = "Taux de décès annuel pour 1 000 habitants et température moyenne",
@@ -249,6 +252,8 @@ plots_list <- list(
     labs(title = "Analyse Statistique des Résidus", x = "Département", y = "Tranche thermique", fill = "Écart") +
     theme_aura()
 )
+# Ajout de la carte mensuelle à la liste existante
+plots_list[["05_cartes_mensuelles_mortalite_temp"]] <- plot_cartes_mensuelles_temp
 
 # Boucle d'exportation
 iwalk(plots_list, function(p, name) {
