@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# --- Dossier de données ---
+# On ignore tout le contenu du dossier
+data/*
+resultat/*

@@ -1,255 +1,195 @@
-setwd("/home/arthur/Documents/nextcloud_sync/Documents/analyse spatiale et santé/Devoir/")
+################################################################################
+# ANALYSE MORTALITÉ / MÉTÉO - RÉGION AURA
+################################################################################
 
-################################# Import des librairies ########################
-
-library(dplyr)
+# 1. SETUP & CONFIGURATION -----------------------------------------------------
+library(tidyverse)
 library(lubridate)
-library(ggplot2)
-library(stringr)
-library(scales)
-library(readr)
 library(sf)
-library(tidyr) # Ajouté pour replace_na()
+library(scales)
+library(viridis)
 
-################################ Ouverture des données #########################
-
-deces <- read.csv("data/insee_deces.csv")
-
-################################Prétraitement des données ######################
-
-### conversion des dates de chr vers date
-# class(deces$date_naissance) # Vérification
-deces <- deces %>%
-  mutate(date_deces = ymd(date_deces)) %>%
-  mutate(date_naissance = ymd(date_naissance))
-
-### Sélection seulement des données de 2010 à 2019
-deces_2010_2019 <- deces %>%
-  filter(!is.na(date_deces)) %>%
-  filter(between(year(date_deces), 2000, 2019))
-
-# remove(deces) # suppression des tables de traitement intermédiaires pour économiser de la RAM
-
-### Sélection des données qui se situent dans la région AURA
-deces_2010_2019 <- deces_2010_2019 %>%
-  filter(!is.na(code_lieu_deces)) %>%
-  mutate(
-    dept = str_sub(code_lieu_deces, 1, 2)  # Extrait les 2 premiers chiffres (département)
-  ) %>%
-  filter(dept %in% c("01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"))
-
-### Calcul de l'âge de décès
-deces_2010_2019 <- deces_2010_2019 %>%
-  mutate(
-    age_revolu = as.period(interval(date_naissance, date_deces))$year
-  )
-
-################################# Regroupement du nombre de morts et visualisation ##############
-
-### Morts regroupés par année
-deces_par_annee <- deces_2010_2019 %>%
-  mutate(annee_deces = year(date_deces)) %>%
-  group_by(annee_deces) %>%
-  summarise(n_deces = n(), .groups = "drop")
-
-### Plot du nombre de décès par année
-deces_par_annee %>%
-  ggplot(aes(x=annee_deces, y=n_deces)) +
-  geom_line() +
-  geom_point() +
-  theme_minimal() +
-  labs(title = "Évolution annuelle des décès en AURA")
-
-### morts regroupés par année, mois et commune
-deces_par_commune_mois <- deces_2010_2019 %>%
-  filter(!is.na(date_deces)) %>%                          
-  mutate(
-    annee_deces  = year(date_deces),
-    mois_deces   = month(date_deces)
-  ) %>%
-  group_by(code_lieu_deces, annee_deces, mois_deces) %>%   
-  summarise(n_deces = n(), .groups = "drop")
-
-
-### Graphique du nombre de morts par mois
-deces_par_mois <- deces_2010_2019 %>%
-  filter(!is.na(date_deces)) %>%
-  mutate(
-    periode = make_date(year = year(date_deces), 
-                        month = month(date_deces), 
-                        day = 1)
-  )%>%
-  group_by(periode) %>%            
-  summarise(n_deces = n(), .groups = "drop")
-
-ggplot(deces_par_mois, aes(x = periode, y = n_deces)) +
-  geom_line(color = "darkred", size = 0.8) +
-  scale_x_date(date_breaks = "12 months") +
-  labs(
-    title = "Nombre de décès par mois (2010-2019)",
-    x = "Date", 
-    y = "Nombre de décès",
-    caption = "Source: données décès filtrées 2010-2020"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-
-#################################### Ajout des données géométriques #############
-
-# st_layers("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg")
-
-region_france <- st_read("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg", 
-                         layer = "region", quiet = TRUE)
-aura <- region_france %>% 
-  filter(code_insee=="84") %>% # extraction de la région AURA
-  st_transform(crs = 2154)
-
-commune_france <- st_read("data/ADE_4-0_GPKG_LAMB93_FXX-ED2025-12-05.gpkg", layer = "commune", quiet = TRUE)
-commune_aura <- commune_france %>% 
-  filter(code_insee_de_la_region == "84") %>%
-  st_transform(crs = 2154)
-
-st_write(commune_aura, "resultat/resultat.gpkg", 
-         layer = "commune_aura", 
-         delete_dsn = TRUE, 
-         append = FALSE)
-
-
-#################################### Ajout des données météorologiques ###############
-
-SIM <- read.csv("data/MENS_SIM2_2010-2019.csv", sep = ";", header = TRUE)
-
-SIM_clean <- SIM %>% 
-  mutate(
-    LAMBX_M = LAMBX * 100,
-    LAMBY_M = LAMBY * 100
-  )
-
-SIM_2154 <- st_as_sf(SIM_clean, 
-                     coords = c("LAMBX_M", "LAMBY_M"), 
-                     crs = 27572) %>%
-  st_transform(crs = 2154)
-
-# Filtre spatial
-SIM_AURA_2154 <- st_filter(SIM_2154, aura) %>% 
-  mutate(id_station = row_number())
-
-st_write(SIM_AURA_2154, "resultat/resultat.gpkg", 
-         layer = "SIM_AURA_2154", 
-         delete_dsn = FALSE, 
-         append = FALSE)
-
-# Jointure spatiale
-lien_commune_point <- st_join(SIM_AURA_2154, commune_aura, join = st_nearest_feature)
-
-# Séparation Dates
-SIM_AURA_clean <- SIM_AURA_2154 %>%
-  mutate(
-    annee = as.numeric(substr(as.character(DATE), 1, 4)),
-    mois  = as.numeric(substr(as.character(DATE), 5, 6))
-  )
-
-# Exemple Pic chaleur
-pic_chaleur_juin_2015 <- SIM_AURA_clean %>% filter(annee == 2015, mois == 6) # Correction: 2015 est numerique ici
-
-st_write(pic_chaleur_juin_2015, "resultat/resultat.gpkg", 
-         layer = "pic_chaleur_juin_2015", 
-         delete_dsn = FALSE, 
-         append = FALSE)
-
-
-#################################### Ajout des données sociales ######################
-
-dossier_complet <- read_delim(
-  "data/dossier_complet.csv",
-  delim = ";",
-  escape_double = FALSE,
-  trim_ws = TRUE
+# Paramètres globaux
+CONFIG <- list(
+  path_data = "data/",
+  path_out  = "resultat/",
+  reg_code  = "84",
+  depts     = c("01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"),
+  crs       = 2154
 )
 
-# 1. Liste des variables de population
-# Correction ici : CODGEO doit être présent pour la jointure
-vars_pop <- c("CODGEO","P15_POP","P15_POP0014", "P15_POP1529", "P15_POP3044", "P15_POP4559", "P15_POP6074", "P15_POP7589", "P15_POP90P")
+if (!dir.exists(CONFIG$path_out)) dir.create(CONFIG$path_out)
 
-# 2. Vérification présence colonnes
-vars_selectionnees_insee <- vars_pop[vars_pop %in% colnames(dossier_complet)]
+theme_aura <- function() {
+  theme_minimal() + 
+    theme(
+      plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5),
+      strip.text = element_text(face = "bold", size = 10),
+      panel.spacing = unit(1, "lines")
+    )
+}
 
-# 3. Création dataframe nettoyé
-# Correction ici : on utilise la bonne variable 'vars_selectionnees_insee'
-insee_pop_2015 <- dossier_complet[, vars_selectionnees_insee]
+# 2. CHARGEMENT & PRÉTRAITEMENT ------------------------------------------------
 
-head(insee_pop_2015)
-
-#################################### ANALYSE MÉTÉO / DÉCÈS ########################
-
-# Agrégation de la météo moyenne
-meteo_mensuelle <- SIM_AURA_clean %>%
-  st_drop_geometry() %>%
-  group_by(annee, mois) %>%
-  summarise(temp_moyenne = mean(T_MENS, na.rm = TRUE), .groups = "drop")
-
-# Préparation des décès
-deces_mensuels <- deces_par_mois %>%
-  mutate(annee = year(periode), 
-         mois = month(periode))
-
-# Jointure finale
-df_final <- deces_mensuels %>%
-  inner_join(meteo_mensuelle, by = c("annee", "mois"))
-
-# Visualisation 2015
-df_2015 <- df_final %>%
-  filter(annee == 2015) %>%
-  mutate(nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"))
-
-# Ordre chronologique inverse pour le graph
-df_2015$nom_mois <- factor(df_2015$nom_mois, levels = rev(levels(df_2015$nom_mois)))
-
-ggplot(df_2015, aes(x = nom_mois, y = n_deces, fill = temp_moyenne)) +
-  geom_col() + 
-  coord_flip() + 
-  scale_fill_gradient(low = "blue", high = "red", name = "Temp. Moyenne (°C)") +
-  labs(
-    title = "Mortalité mensuelle en AURA - Année 2015",
-    x = "Mois",
-    y = "Nombre total de décès"
-  ) +
-  theme_minimal()
-
-#################################### CALCUL DU TAUX DE DÉCÈS ########################
-
-# 1. Calcul de la population totale 2015 en AURA
-# On filtre les communes qui sont dans votre objet 'commune_aura' 
-# pour être sûr de ne garder que la région cible.
-pop_aura_2015 <- insee_pop_2015 %>%
-  filter(CODGEO %in% commune_aura$code_insee) %>%
-  summarise(total_pop = sum(P15_POP, na.rm = TRUE)) %>%
-  pull(total_pop)
-
-# 2. Intégration du calcul dans le dataframe final
-df_final_taux <- df_final %>%
+deces_clean <- read_csv(paste0(CONFIG$path_data, "insee_deces.csv"), show_col_types = FALSE) %>%
   mutate(
-    # Calcul : (Nombre de décès / Population totale) * 1 000
-    taux_deces_10k = (n_deces / pop_aura_2015) * 1000
+    date_deces = ymd(date_deces),
+    annee = year(date_deces),
+    mois  = month(date_deces),
+    dept  = str_sub(code_lieu_deces, 1, 2)
+  ) %>%
+  filter(between(annee, 2010, 2019), dept %in% CONFIG$depts)
+
+commune_aura <- st_read(paste0(CONFIG$path_data, "ADE_4-0_GPKG_LAMB93_FXX-ED2025-11-20.gpkg"), 
+                        layer = "commune", quiet = TRUE) %>%
+  filter(code_insee_de_la_region == CONFIG$reg_code) %>%
+  st_transform(CONFIG$crs)
+
+pop_2015_dept <- read_delim(paste0(CONFIG$path_data, "dossier_complet.csv"), delim = ";", show_col_types = FALSE) %>%
+  select(CODGEO, P16_POP) %>%
+  filter(CODGEO %in% commune_aura$code_insee) %>%
+  mutate(dept = str_sub(CODGEO, 1, 2)) %>%
+  group_by(dept) %>%
+  summarise(pop_dept = sum(P16_POP, na.rm = TRUE), .groups = "drop")
+
+meteo_dept <- read_delim(paste0(CONFIG$path_data, "MENS_SIM2_2010-2019.csv"), delim = ";", show_col_types = FALSE) %>%
+  mutate(across(c(LAMBX, LAMBY), ~ .x * 100)) %>%
+  st_as_sf(coords = c("LAMBX", "LAMBY"), crs = 27572) %>%
+  st_transform(CONFIG$crs) %>%
+  st_join(commune_aura %>% select(code_insee), join = st_nearest_feature) %>%
+  st_drop_geometry() %>%
+  mutate(
+    annee = as.numeric(str_sub(DATE, 1, 4)),
+    mois  = as.numeric(str_sub(DATE, 5, 6)),
+    dept  = str_sub(code_insee, 1, 2)
+  ) %>%
+  group_by(dept, annee, mois) %>%
+  summarise(temp_moy = mean(T_MENS, na.rm = TRUE), .groups = "drop")
+
+# 3. CALCULS STATISTIQUES ------------------------------------------------------
+
+df_2015 <- deces_clean %>%
+  filter(annee == 2015) %>%
+  group_by(dept, mois) %>%
+  summarise(n_deces = n(), .groups = "drop") %>%
+  inner_join(pop_2015_dept, by = "dept") %>%
+  left_join(meteo_dept %>% filter(annee == 2015), by = c("dept", "mois")) %>%
+  mutate(
+    taux_1000 = (n_deces / pop_dept) * 1000,
+    nom_mois = month(mois, label = TRUE, abbr = TRUE, locale = "fr_FR.UTF-8"),
+    nom_mois = fct_rev(nom_mois),
+    tranche_temp = cut(temp_moy, breaks = 3, labels = c("Froid", "Modéré", "Chaud"))
   )
 
-# 3. Visualisation du taux de décès pour l'année 2015
-df_2015_taux <- df_final_taux %>%
-  filter(annee == 2015) %>%
-  mutate(nom_mois = month(mois, label = TRUE, abbr = FALSE, locale = "fr_FR.UTF-8"))
+# Chi-deux
+table_chi <- xtabs(n_deces ~ tranche_temp + dept, data = df_2015)
+test_chi  <- chisq.test(table_chi)
+residus_df <- as.data.frame(test_chi$residuals)
 
-# Réorganisation des mois pour le graphique
-df_2015_taux$nom_mois <- factor(df_2015_taux$nom_mois, levels = rev(levels(df_2015_taux$nom_mois)))
+# 4. VISUALISATIONS ------------------------------------------------------------
 
-ggplot(df_2015_taux, aes(x = nom_mois, y = taux_deces_10k, fill = temp_moyenne)) +
-  geom_col() + 
-  coord_flip() + 
-  scale_fill_gradient(low = "blue", high = "red", name = "Temp. Moyenne (°C)") +
-  labs(
-    title = "Taux de mortalité mensuel en AURA - Année 2015",
-    subtitle = paste("Population totale estimée (2015) :", format(pop_aura_2015, big.mark = " ")),
-    x = "Mois",
-    y = "Nombre de décès pour 1 000 habitants"
+# --- Graphique 1 : Régional Global ---
+df_2015_reg <- df_2015 %>%
+  group_by(nom_mois) %>%
+  summarise(n_deces = sum(n_deces), temp = mean(temp_moy, na.rm = TRUE))
+
+ggplot(df_2015_reg, aes(x = nom_mois, y = n_deces, fill = temp)) +
+  geom_col() + coord_flip() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 15) +
+  labs(title = "Mortalité mensuelle AURA - 2015", y = "Décès totaux", fill = "Temp °C") +
+  theme_aura()
+
+# --- Graphique 2 : Détail par Département (Faceting) ---
+
+ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~dept, scales = "free_x") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 15) +
+  labs(title = "Taux de mortalité par département (2015)",
+       x = "Mois", y = "Décès pour 1 000 hab.", fill = "Temp °C") +
+  theme_aura()
+
+# --- Graphique 3
+ggplot(carte_data) +
+  geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
+  geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), 
+               color = "white", fontface = "bold", size = 3.5) +
+  scale_fill_viridis_c(
+    option = "magma", 
+    direction = -1,
+    name = "Taux de mortalité\n(pour 1 000 hab.)"
   ) +
-  theme_minimal()
+  labs(
+    title = "Répartition géographique de la mortalité en Auvergne-Rhône-Alpes (2015)",
+    subtitle = paste("La couleur indique le taux de décès annuel pour 1 000 habitants\n",
+                     "Les étiquettes affichent la température moyenne annuelle enregistrée"),
+    caption = "Sources : Données décès INSEE & Historique météo SIM2"
+  ) +
+  theme_void() + 
+  theme(
+    plot.title = element_text(face = "bold", size = 14, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 10, color = "grey30", lineheight = 1.2),
+    # CORRECTION ICI : face = "italic" au lieu de italic = TRUE
+    plot.caption = element_text(size = 8, hjust = 0.9, face = "italic"), 
+    legend.position = "right",
+    legend.title = element_text(size = 9, face = "bold")
+  )
+
+# --- Graphique 4 : Chi-deux (Résidus) ---
+ggplot(residus_df, aes(x = dept, y = tranche_temp, fill = Freq)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient2(low = "#313695", mid = "#f7f7f7", high = "#a50026", midpoint = 0) +
+  labs(title = "Analyse Statistique des Résidus", x = "Département", y = "Tranche thermique", fill = "Écart") +
+  theme_aura()
+
+# 5. EXPORT AUTOMATIQUE DES GRAPHIQUES -----------------------------------------
+
+# Création d'une liste de graphiques pour faciliter l'export
+plots_list <- list(
+  "01_mortalite_regionale_2015" = ggplot(df_2015_reg, aes(x = nom_mois, y = n_deces, fill = temp)) +
+    geom_col() + coord_flip() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 15) +
+    labs(title = "Mortalité mensuelle AURA - 2015", y = "Décès totaux", fill = "Temp °C") +
+    theme_aura(),
+  
+  "02_mortalite_par_departement" = ggplot(df_2015, aes(x = nom_mois, y = taux_1000, fill = temp_moy)) +
+    geom_col() + coord_flip() +
+    facet_wrap(~dept, scales = "free_x") +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 15) +
+    labs(title = "Taux de mortalité par département (2015)",
+         x = "Mois", y = "Décès pour 1 000 hab.", fill = "Temp °C") +
+    theme_aura(),
+  
+  "03_carte_taux_mortalite" = ggplot(carte_data) +
+    geom_sf(aes(fill = taux), color = "white", linewidth = 0.2) +
+    geom_sf_text(aes(label = paste0(round(temp_ann, 1), "°C")), color = "white", size = 3) +
+    scale_fill_viridis_c(option = "magma", direction = -1) +
+    theme_void() + labs(title = "Carte du taux de mortalité 2015"),
+  
+  "04_analyse_statistique_chi2" = ggplot(residus_df, aes(x = dept, y = tranche_temp, fill = Freq)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    scale_fill_gradient2(low = "#313695", mid = "#f7f7f7", high = "#a50026", midpoint = 0) +
+    labs(title = "Analyse Statistique des Résidus", x = "Département", y = "Tranche thermique", fill = "Écart") +
+    theme_aura()
+)
+
+# Boucle d'exportation
+# On utilise iwalk pour parcourir le nom et l'objet graphique simultanément
+iwalk(plots_list, function(p, name) {
+  file_path <- paste0(CONFIG$path_out, name, ".png")
+  
+  ggsave(
+    filename = file_path,
+    plot = p,
+    width = 10,     # Largeur en pouces
+    height = 7,     # Hauteur en pouces
+    dpi = 300,      # Qualité impression
+    bg = "white"    # Fond blanc forcé pour éviter la transparence
+  )
+  
+  message(paste("Graphique sauvegardé :", file_path))
+})
+
+

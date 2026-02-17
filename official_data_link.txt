@@ -1,0 +1,7 @@
+https://data.geopf.fr/telechargement/download/ADMIN-EXPRESS/ADMIN-EXPRESS_4-0__GPKG_LAMB93_FXX_2025-11-20/ADMIN-EXPRESS_4-0__GPKG_LAMB93_FXX_2025-11-20.7z = données pour la région / communes
+
+https://www.insee.fr/fr/statistiques/5359146 = base du dossier complet insee
+
+https://meteo.data.gouv.fr/datasets/65e040c50a5c6872ebebc711 = mensuelle SIM 2 
+
+https://data.cquest.org/insee_deces/ = DECES FRANCE INSEE
