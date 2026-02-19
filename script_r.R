@@ -1,7 +1,8 @@
 ################################################################################
 # ANALYSE MORTALITÉ / MÉTÉO - RÉGION AURA
 # Ce script analyse la relation entre les décès et les conditions météorologiques
-# dans la région Auvergne-Rhône-Alpes pour la période 2010-2019
+# dans la région Auvergne-Rhône-Alpes pour la période 2015
+#Arthur.T dans ce groupe est la personne qui n'était pas présente au dernier contrôle.
 ################################################################################
 
 # ==============================================================================
